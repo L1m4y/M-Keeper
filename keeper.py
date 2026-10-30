@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 import sys
 import time
 import subprocess
@@ -7,9 +8,15 @@ import getpass
 import shutil
 import random
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_FILE = os.path.join(BASE_DIR, "accounts.json")
-DELAY_MINUTES = 5
+def get_delay_minutes():
+    try:
+        return max(0, int(os.environ.get("MEGA_KEEPER_DELAY_MINUTES", "5")))
+    except (TypeError, ValueError):
+        return 5
+
+BASE_DIR = Path(__file__).resolve().parent
+DB_FILE = Path(os.environ.get("MEGA_KEEPER_DB", str(BASE_DIR / "accounts.json")))
+DELAY_MINUTES = get_delay_minutes()
 
 class C:
     CYAN = "\033[96m"
@@ -53,13 +60,24 @@ def force_logout():
     print(f"  {C.GREEN}[+] LOGOUT SUCCESSFUL. TRACES WIPED.{C.RESET}\n")
 
 def load_accounts():
-    if not os.path.exists(DB_FILE): return[]
+    if not DB_FILE.exists():
+        return []
     try:
-        with open(DB_FILE, "r") as f: return json.load(f)
-    except: return[]
+        with DB_FILE.open(encoding="utf-8") as handle:
+            return [item for item in json.load(handle) if isinstance(item, dict)]
+    except (OSError, ValueError):
+        return []
 
 def save_accounts(data):
-    with open(DB_FILE, "w") as f: json.dump(data, f, indent=4)
+    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = DB_FILE.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=4)
+    tmp.replace(DB_FILE)
+    try:
+        os.chmod(DB_FILE, 0o600)
+    except OSError:
+        pass
 
 def list_status():
     print_header()
@@ -75,7 +93,7 @@ def list_status():
         print(f"  {C.RED}[!] NO NODES REGISTERED IN THE MAINFRAME.{C.RESET}")
     else:
         for acc in accounts:
-            node_id = acc.get("password", "Unknown")
+            node_id = acc.get("email", "Unknown")
             status = acc.get("status", "Pending")
             color = C.GREEN if status == "Active" else C.RED if status == "Error" else C.YELLOW
             print(f"{node_id:<40} | {color}[ {status.upper()} ]{C.RESET}")
