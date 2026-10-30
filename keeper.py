@@ -18,6 +18,27 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_FILE = Path(os.environ.get("MEGA_KEEPER_DB", str(BASE_DIR / "accounts.json")))
 DELAY_MINUTES = get_delay_minutes()
 
+
+def get_command_timeout():
+    try:
+        return max(10, int(os.environ.get("MEGA_KEEPER_TIMEOUT_SECONDS", "60")))
+    except (TypeError, ValueError):
+        return 60
+
+
+def check_node(email, secret):
+    try:
+        return subprocess.run(
+            ["megatools", "df", "--reload", "-u", email, "-p", secret, "--human"],
+            capture_output=True,
+            text=True,
+            timeout=get_command_timeout(),
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(args=[], returncode=124, stdout="", stderr="megatools timed out")
+    except OSError as exc:
+        return subprocess.CompletedProcess(args=[], returncode=127, stdout="", stderr=str(exc) or "megatools failed to start")
+
 class C:
     CYAN = "\033[96m"
     GREEN = "\033[92m"
@@ -135,7 +156,10 @@ def keep_alive():
         print(f"{C.CYAN}[>] TARGET NODE [{i+1}/{total_nodes}]:{C.RESET} {pwd_val}")
         print(f"  [*] AUTHENTICATING & CHECKING QUOTA...")
 
-        res = subprocess.run(["megatools", "df", "--reload", "-u", email_val, "-p", pwd_val, "--human"], capture_output=True, text=True)
+        res = check_node(email_val, pwd_val)
+        if res.returncode != 0:
+            time.sleep(2)
+            res = check_node(email_val, pwd_val)
 
         if res.returncode == 0:
             acc["status"] = "Active"
