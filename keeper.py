@@ -171,23 +171,41 @@ def keep_alive():
             acc["status"] = "Error"
             fail_count += 1
             print(f"  {C.RED}[-] ACCESS DENIED / NETWORK FAILURE.{C.RESET}")
+            if getattr(res, "stderr", "").strip():
+                print(f"      {res.stderr.strip().splitlines()[0]}")
 
         save_accounts(accounts)
         force_logout()
 
         if i < total_nodes - 1:
-            print(f"{C.YELLOW}[*] ENTERING STEALTH COOLDOWN TO ROTATE IP...{C.RESET}")
-            if sys.stdout.isatty():
-                for remaining in range(DELAY_MINUTES * 60, 0, -1):
-                    sys.stdout.write(f"\r  {C.BOLD}DELAY: {remaining:04d}s{C.RESET}")
-                    sys.stdout.flush()
-                    time.sleep(1)
-                sys.stdout.write("\n\n")
-            else:
-
-                random_delay = random.randint(60, 300)
-                print(f"   [i] Next rotation in {random_delay}s (Stealth Mode)...")
-                time.sleep(random_delay)
+            wait_seconds = DELAY_MINUTES * 60
+            if wait_seconds > 0:
+                print(f"{C.YELLOW}[*] COOLDOWN BEFORE NEXT NODE (Enter after 5s to skip)...{C.RESET}")
+                if sys.stdout.isatty():
+                    remaining = wait_seconds
+                    started = time.monotonic()
+                    while remaining > 0:
+                        sys.stdout.write(f"\r  {C.BOLD}DELAY: {remaining:04d}s{C.RESET}")
+                        sys.stdout.flush()
+                        elapsed = time.monotonic() - started
+                        if elapsed >= 5:
+                            try:
+                                import select
+                                ready, _, _ = select.select([sys.stdin], [], [], 0)
+                                if ready:
+                                    sys.stdin.readline()
+                                    sys.stdout.write("\n")
+                                    print(f"  {C.YELLOW}[*] COOLDOWN SKIPPED MANUALLY.{C.RESET}\n")
+                                    break
+                            except (OSError, ValueError):
+                                pass
+                        time.sleep(1)
+                        remaining -= 1
+                    sys.stdout.write("\n\n")
+                else:
+                    random_delay = random.randint(60, 300)
+                    print(f"   [i] Next rotation in {random_delay}s...")
+                    time.sleep(random_delay)
 
     print(f"\n{C.BOLD}" + "="*55 + f"{C.RESET}")
     print(f"{C.CYAN}    MAINTENANCE SEQUENCE COMPLETED{C.RESET}")
