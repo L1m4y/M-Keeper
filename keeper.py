@@ -56,7 +56,7 @@ ASCII_ART = r"""
 
 def print_header():
     print(f"{C.CYAN}{C.BOLD}{ASCII_ART}{C.RESET}")
-    print(f"{C.CYAN}   :: v0.6.5 by L1m4y ::{C.RESET}\n")
+    print(f"{C.CYAN}   :: v0.7.0 by L1m4y ::{C.RESET}\n")
 
 def animate_task(task_name, duration=1.5):
     if sys.stdout.isatty():
@@ -128,11 +128,16 @@ def add_account():
     email = input(f" {C.CYAN}[?] Mega Email:{C.RESET} ").strip()
     password = getpass.getpass(f" {C.CYAN}[?] Password/Code (Hidden):{C.RESET} ").strip()
 
-    if email and password:
-        accounts = load_accounts()
-        accounts.append({"email": email, "password": password, "status": "Pending"})
-        save_accounts(accounts)
-        print(f"\n{C.GREEN}[+] NODE SECURELY REGISTERED IN DATABASE.{C.RESET}")
+    if not email or "@" not in email or not password:
+        print(f"\n{C.RED}[!] INVALID NODE. NOTHING SAVED.{C.RESET}")
+        return
+    accounts = load_accounts()
+    if any(account.get("email") == email for account in accounts):
+        print(f"\n{C.YELLOW}[!] NODE ALREADY REGISTERED.{C.RESET}")
+        return
+    accounts.append({"email": email, "password": password, "status": "Pending"})
+    save_accounts(accounts)
+    print(f"\n{C.GREEN}[+] NODE SECURELY REGISTERED IN DATABASE.{C.RESET}")
 
 def keep_alive():
     print_header()
