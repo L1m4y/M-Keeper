@@ -1,29 +1,131 @@
 # Mega-Keeper
 
-Command-line tool for bulk Mega.nz node validation, maintenance and quota checks. It stores registered nodes in `accounts.json` with `0600` permissions and runs account checks one by one.
+Command-line tool for bulk Mega.nz account validation, maintenance and quota checks.
 
-## Usage
+<div align="center">
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-D42F3F?logo=gnu&logoColor=FFFFFF)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=FFFFFF)](https://www.python.org/)
+[![Bash](https://img.shields.io/badge/Bash-5-4EAA25?logo=gnu-bash&logoColor=FFFFFF)](https://www.gnu.org/software/bash/)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=FFFFFF)](https://nodejs.org/)
+[![Rust](https://img.shields.io/badge/Rust-2021-000000?logo=rust&logoColor=FFFFFF)](https://www.rust-lang.org/)
+
+</div>
+
+## What it does
+
+`Mega-Keeper` iterates through a local list of Mega.nz accounts, authenticates each
+one with `megatools`, prints quota information and updates the stored status.
+It is meant to keep free accounts from becoming inactive, without leaking
+credentials on the process list.
+
+## Implementations
+
+| Language | Entry point | Notes |
+|---|---|---|
+| Python 3.9+ | `keeper.py` | Full reference implementation, stdlib only |
+| Bash 5+ | `bin/keeper.sh` | Requires `megatools` and `jq` |
+| Node.js 18+ | `bin/keeper.js` | Requires `megatools` |
+| Rust (2021) | `rust/mega-keeper-cli` | Environment check and version; builds offline |
+
+All implementations read the same `accounts.json` schema.
+
+## Installation
 
 ```bash
-python3 keeper.py status
-python3 keeper.py add
-python3 keeper.py start
+git clone https://github.com/L1m4y/Mega-Keeper.git
+cd Mega-Keeper
+pip install --user .   # optional; the scripts run from the checkout
 ```
+
+Requirements:
+
+- Python 3.9+ (reference implementation)
+- `megatools` installed and available in `PATH`
+- `jq` for the Bash implementation
+
+## Quick start
+
+```bash
+cp accounts.example.json accounts.json
+python3 keeper.py add            # register a node interactively
+python3 keeper.py status         # list nodes and their status
+python3 keeper.py start          # run the maintenance sequence
+python3 keeper.py doctor         # check the local environment
+```
+
+Non-interactive helpers:
+
+```bash
+python3 keeper.py add --email you@example.com --password 'correct horse battery'
+python3 keeper.py remove you@example.com --yes
+python3 keeper.py export accounts.backup.json
+python3 keeper.py import accounts.backup.json
+python3 keeper.py start --delay 3 --timeout 45 --concurrency 2 --shuffle --dry-run
+```
+
+## Security model
+
+- Credentials are **never** passed on the command line. A short-lived configuration
+  file is created with mode `0600`, handed to `megatools` via `--config`, and
+  deleted afterwards. This keeps passwords out of `ps` output.
+- The database is written atomically (temp file + `rename`) with mode `0600`.
+- A sidecar lock file prevents concurrent executions from corrupting the database.
+- `accounts.json` and `*.bak` files are git-ignored by default; a template is
+  provided as `accounts.example.json`.
 
 ## Environment
 
-- `MEGA_KEEPER_DB`: custom account database path.
-- `MEGA_KEEPER_DELAY_MINUTES`: delay between nodes (default: `5`).
-- `MEGA_KEEPER_TIMEOUT_SECONDS`: timeout for each `megatools` check (default: `60`).
-- Optional non-interactive mode automatically uses shorter random delays.
+| Variable | Description | Default |
+|---|---|---|
+| `MEGA_KEEPER_DB` | Account database path | `./accounts.json` |
+| `MEGA_KEEPER_DELAY_MINUTES` | Delay between nodes | `5` |
+| `MEGA_KEEPER_TIMEOUT_SECONDS` | Timeout per `megatools` call | `60` |
+| `MEGA_KEEPER_RETRIES` | Attempts per node | `1` |
+| `MEGA_KEEPER_CONCURRENCY` | Nodes processed in parallel | `1` |
+| `MEGA_KEEPER_LOG` | Optional log file | stderr only |
 
-## Requirements
+## Database schema
 
-- Python 3.9+
-- `megatools` installed and available in `PATH`.
-- Python standard library only.
+```json
+[
+  {
+    "email": "user@example.com",
+    "password": "correct horse battery",
+    "status": "Pending"
+  }
+]
+```
 
-## Notes
+Status values are `Pending`, `Active` or `Error`. The password is stored in clear
+text; restrict file permissions and do not commit the database.
 
-- Registered emails and passwords are stored locally and should never be committed.
-- `accounts.json`, `.tmp` files and local caches remain git-ignored.
+## Behaviour notes
+
+- A node is retried when the first `megatools` call fails.
+- The `megatools` cache directory is cleared after every node to avoid stale state.
+- When standard input is a TTY, the cooldown can be skipped by pressing ENTER
+  after the first five seconds.
+- In non-interactive mode the delay is randomised between 60 and 300 seconds.
+- `SIGINT`/`SIGTERM` stop the current run after the node in progress finishes.
+
+## Development
+
+```bash
+python -m compileall -q keeper.py
+python -m unittest tests.test_keeper -v
+node --check bin/keeper.js
+bash -n bin/keeper.sh
+cd rust/mega-keeper-cli && cargo build --release && cargo test
+```
+
+## Known limitations
+
+- `megatools` must be installed; the tool does not install it.
+- Mega free accounts become inactive after three months without login; running
+  this monthly (via cron or a systemd timer) is enough.
+- The password is stored on disk in clear text because `megatools` requires it.
+
+## License
+
+Distributed under the [GPL-3.0](LICENSE) license.
