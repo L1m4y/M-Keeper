@@ -39,7 +39,7 @@ function writeMegaConfig(email, password) {
 function checkNode(email, password, timeout) {
   const cfg = writeMegaConfig(email, password);
   try {
-    const res = spawnSync('megatools', ['df', '--reload', '--human', '--config', cfg, '--no-ask-password'], {
+    const res = spawnSync('megatools', ['df', '--reload', '--human', '--ignore-config-file', '--config', cfg, '--no-ask-password'], {
       timeout: timeout * 1000,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -54,7 +54,7 @@ function checkNode(email, password, timeout) {
 
 function printStatus() {
   const accounts = loadAccounts(DB_FILE);
-  console.log(`Mega-Keeper ${VERSION} :: registered nodes (node)`);
+  console.log(`M-Keeper ${VERSION} :: registered nodes (node)`);
   for (const acc of accounts) {
     console.log(`${(acc.email || '').padEnd(40)} | ${acc.status || 'Pending'}`);
   }
@@ -97,7 +97,7 @@ async function keepAlive(args) {
   process.on('SIGINT', sig);
   process.on('SIGTERM', sig);
 
-  console.log(`Mega-Keeper ${VERSION} :: maintenance sequence (node)`);
+  console.log(`M-Keeper ${VERSION} :: maintenance sequence (node)`);
   console.log(`nodes=${total} delay=${args.delay || 5}m timeout=${timeout}s`);
 
   for (let i = 0; i < total; i++) {
@@ -156,7 +156,7 @@ Environment:
   }
   if (cmd === 'status') { printStatus(); return; }
   if (cmd === 'doctor') {
-    console.log('Mega-Keeper doctor (node)');
+    console.log('M-Keeper doctor (node)');
     console.log('node       : ' + process.version);
     const mt = spawnSync('command', ['-v', 'megatools'], { shell: true });
     console.log('megatools  : ' + (mt.status === 0 ? 'present' : 'NOT FOUND'));

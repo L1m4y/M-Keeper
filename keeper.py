@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mega-Keeper: keep Mega.nz accounts alive by validating them periodically.
+"""M-Keeper: keep Mega.nz accounts alive by validating them periodically.
 
 This tool wraps the `megatools` command line utility. Account data never
 reaches a command line; credentials are written to a short-lived configuration
@@ -166,7 +166,8 @@ def write_mega_config(email: str, password: str) -> str:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write("[Login]\n")
             handle.write(f"Username = {email}\n")
-            handle.write(f"Password = {password}\n")
+            safe_password = password.replace("\\", "\\\\")
+            handle.write(f"Password = {safe_password}\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(tmp_path, 0o600)
@@ -183,7 +184,7 @@ def check_node(email: str, password: str, timeout: int) -> tuple[int, str, str]:
     config_path = write_mega_config(email, password)
     try:
         result = subprocess.run(
-            ["megatools", "df", "--reload", "--human", "--config", config_path, "--no-ask-password"],
+            ["megatools", "df", "--reload", "--human", "--ignore-config-file", "--config", config_path, "--no-ask-password"],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -208,7 +209,7 @@ def print_status(color: Color, db_path: Path, as_json: bool = False) -> int:
     if as_json:
         print(json.dumps(accounts, indent=2, ensure_ascii=False))
         return 0
-    print(f"{color.cyan('Mega-Keeper')} {VERSION}")
+    print(f"{color.cyan('M-Keeper')} {VERSION}")
     print("=" * 65)
     print(f"{'TARGET NODE':<40} | {'STATUS':<10}")
     print("-" * 65)
@@ -386,7 +387,7 @@ def keep_alive(args: argparse.Namespace, color: Color) -> int:
     retries = max(1, args.retries)
     concurrency = max(1, min(args.concurrency, total))
 
-    print(color.cyan(f"Mega-Keeper {VERSION} :: maintenance sequence"))
+    print(color.cyan(f"M-Keeper {VERSION} :: maintenance sequence"))
     print(f"nodes={total} concurrency={concurrency} delay={args.delay}m timeout={timeout}s")
 
     indices = list(range(total))
@@ -468,7 +469,7 @@ def keep_alive(args: argparse.Namespace, color: Color) -> int:
 
 
 def doctor(color: Color) -> int:
-    print(f"{color.cyan('Mega-Keeper doctor')}")
+    print(f"{color.cyan('M-Keeper doctor')}")
     print(f"python     : {sys.version.split()[0]} ({platform.system()})")
     megatools = shutil.which("megatools")
     print(f"megatools  : {megatools or color.red('NOT FOUND')}")

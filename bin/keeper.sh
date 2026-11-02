@@ -9,7 +9,7 @@ fail() { printf '[!] %s\n' "$*" >&2; exit 1; }
 has() { command -v "$1" >/dev/null 2>&1; }
 print_status() {
     [ -f "$DB_FILE" ] || { echo "[i] no database file: $DB_FILE"; return 0; }
-    echo "Mega-Keeper $VERSION :: registered nodes"
+    echo "M-Keeper $VERSION :: registered nodes"
     printf '%-40s | %s\n' "TARGET NODE" "STATUS"
     jq -r '.[] | "\(.email)\t\(.status)"' "$DB_FILE" 2>/dev/null |
         while IFS=$'\t' read -r email status; do
@@ -37,7 +37,7 @@ check_node() {
     local email="$1" password="$2" cfg rc out err
     cfg="$(mktemp)"; printf '[Login]\nUsername = %s\nPassword = %s\n' "$email" "$password" > "$cfg"
     chmod 600 "$cfg"; out="$(mktemp)"; err="$(mktemp)"
-    set +e; timeout "$TIMEOUT_SECONDS" megatools df --reload --human --config "$cfg" --no-ask-password >"$out" 2>"$err"; rc=$?; set -e
+    set +e; timeout "$TIMEOUT_SECONDS" megatools df --reload --human --ignore-config-file --config "$cfg" --no-ask-password >"$out" 2>"$err"; rc=$?; set -e
     rm -f "$cfg"
     if [ "$rc" -ne 0 ]; then printf '[%s] %s\n' "$rc" "$(head -n1 "$err")" >&2; else cat "$out"; fi
     rm -f "$out" "$err"; return "$rc"
@@ -45,7 +45,7 @@ check_node() {
 keep_alive() {
     [ -f "$DB_FILE" ] || fail "no database file: $DB_FILE"
     total="$(jq 'length' "$DB_FILE")"; [ "$total" -gt 0 ] || fail "NO TARGETS FOUND. ABORTING."
-    echo "Mega-Keeper $VERSION :: maintenance sequence (bash)"; echo "nodes=$total delay=${DELAY_MINUTES}m timeout=${TIMEOUT_SECONDS}s"
+    echo "M-Keeper $VERSION :: maintenance sequence (bash)"; echo "nodes=$total delay=${DELAY_MINUTES}m timeout=${TIMEOUT_SECONDS}s"
     for ((idx=0; idx<total; idx++)); do
         email="$(jq -r ".[$idx].email" "$DB_FILE")"
         password="$(jq -r ".[$idx].password" "$DB_FILE")"
@@ -64,7 +64,7 @@ keep_alive() {
     echo "MAINTENANCE SEQUENCE COMPLETED"
 }
 doctor() {
-    echo "Mega-Keeper doctor (bash)"; echo "bash       : $BASH_VERSION"
+    echo "M-Keeper doctor (bash)"; echo "bash       : $BASH_VERSION"
     if has megatools; then echo "megatools  : $(command -v megatools)"; else echo "megatools  : NOT FOUND"; fi
     if has jq; then echo "jq         : $(command -v jq)"; else echo "jq         : NOT FOUND"; fi
     echo "database   : $DB_FILE"
