@@ -1,10 +1,16 @@
-# Mega-Keeper
+# M-Keeper
 
 Command-line tool for bulk Mega.nz account validation, maintenance and quota checks.
 
 <div align="center">
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-D42F3F?logo=gnu&logoColor=FFFFFF)](LICENSE)
+<img src="assets/icon.png" alt="M-Keeper" width="160"/>
+
+</div>
+
+<div align="center">
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-D9272E?logo=gnu&logoColor=FFFFFF)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=FFFFFF)](https://www.python.org/)
 [![Bash](https://img.shields.io/badge/Bash-5-4EAA25?logo=gnu-bash&logoColor=FFFFFF)](https://www.gnu.org/software/bash/)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=FFFFFF)](https://nodejs.org/)
@@ -14,7 +20,7 @@ Command-line tool for bulk Mega.nz account validation, maintenance and quota che
 
 ## What it does
 
-`Mega-Keeper` iterates through a local list of Mega.nz accounts, authenticates each
+`M-Keeper` iterates through a local list of Mega.nz accounts, authenticates each
 one with `megatools`, prints quota information and updates the stored status.
 It is meant to keep free accounts from becoming inactive, without leaking
 credentials on the process list.
@@ -33,9 +39,9 @@ All implementations read the same `accounts.json` schema.
 ## Installation
 
 ```bash
-git clone https://github.com/L1m4y/Mega-Keeper.git
-cd Mega-Keeper
-pip install --user .   # optional; the scripts run from the checkout
+git clone https://github.com/L1m4y/M-Keeper.git
+cd M-Keeper
+The scripts run directly from the checkout; no package installation is required.
 ```
 
 Requirements:
@@ -44,7 +50,33 @@ Requirements:
 - `megatools` installed and available in `PATH`
 - `jq` for the Bash implementation
 
-## Quick start
+## Dependencies
+
+Install the runtime and all helper tools in one command per distribution. These
+commands also install the optional Node.js and Rust toolchains; omit them if you
+only need the Python implementation.
+
+- Arch Linux (pacman)
+  ```bash
+  sudo pacman -Syu --noconfirm megatools python jq nodejs rust
+  ```
+
+- Debian / Ubuntu (apt)
+  ```bash
+  sudo apt update && sudo apt install -y megatools python3 jq nodejs cargo rustc
+  ```
+
+- Fedora (dnf)
+  ```bash
+  sudo dnf install -y megatools python3 jq nodejs cargo rust
+  ```
+
+- openSUSE (zypper)
+  ```bash
+  sudo zypper --non-interactive install megatools python3 jq nodejs rust cargo
+  ```
+
+## ## Quick start
 
 ```bash
 cp accounts.example.json accounts.json
@@ -118,13 +150,6 @@ node --check bin/keeper.js
 bash -n bin/keeper.sh
 cd rust/mega-keeper-cli && cargo build --release && cargo test
 ```
-
-## Known limitations
-
-- `megatools` must be installed; the tool does not install it.
-- Mega free accounts become inactive after three months without login; running
-  this monthly (via cron or a systemd timer) is enough.
-- The password is stored on disk in clear text because `megatools` requires it.
 
 ## License
 
