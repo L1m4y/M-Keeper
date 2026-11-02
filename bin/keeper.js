@@ -32,7 +32,8 @@ function saveAccounts(dbPath, data) {
 
 function writeMegaConfig(email, password) {
   const tmp = path.join(os.tmpdir(), `mega-keeper-${Date.now()}.ini`);
-  fs.writeFileSync(tmp, `[Login]\nUsername = ${email}\nPassword = ${password}\n`, { mode: 0o600 });
+  const escaped = password.replace(/\\/g, '\\\\');
+  fs.writeFileSync(tmp, `[Login]\nUsername = ${email}\nPassword = ${escaped}\n`, { mode: 0o600 });
   return tmp;
 }
 

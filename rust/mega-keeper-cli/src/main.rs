@@ -2,7 +2,7 @@ use std::env;
 use std::process::Command;
 
 fn megatools_path() -> Option<String> {
-    let out = Command::new("command").arg("-v").arg("megatools").output().ok()?;
+    let out = Command::new("which").arg("megatools").output().ok()?;
     if out.status.success() {
         Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
     } else {

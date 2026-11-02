@@ -468,12 +468,12 @@ def keep_alive(args: argparse.Namespace, color: Color) -> int:
     return 0 if failed == 0 else 1
 
 
-def doctor(color: Color) -> int:
+def doctor(color: Color, db_path: Path) -> int:
     print(f"{color.cyan('M-Keeper doctor')}")
     print(f"python     : {sys.version.split()[0]} ({platform.system()})")
     megatools = shutil.which("megatools")
     print(f"megatools  : {megatools or color.red('NOT FOUND')}")
-    db = DB_FILE
+    db = db_path
     print(f"database   : {db} ({'exists' if db.exists() else 'not created yet'})")
     if db.exists():
         try:
@@ -561,7 +561,7 @@ def main(argv: list[str] | None = None) -> int:
     if command == "export":
         return export_accounts(args.db, args.path)
     if command == "doctor":
-        return doctor(color)
+        return doctor(color, args.db)
     if command == "start":
         if args.dry_run:
             accounts = load_accounts(args.db)
