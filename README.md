@@ -1,12 +1,8 @@
 <div align="center">
 
 <img src="assets/icon.png" alt="M-Keeper" width="160"/>
-
 <h1>M-Keeper</h1>
-
 Command-line tool for bulk Mega.nz account validation, maintenance and quota checks.
-
-<br>
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-D9272E?logo=gnu&logoColor=FFFFFF)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-D9272E?logo=python&logoColor=FFFFFF)](https://www.python.org/)
