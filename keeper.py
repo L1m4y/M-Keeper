@@ -346,20 +346,18 @@ def _countdown(total: int, color: Color, stop_event: threading.Event, no_interac
     started = time.monotonic()
     while remaining > 0 and not stop_event.is_set():
         print(f"\r  {color.bold(f'DELAY: {remaining:04d}s')}", end="", flush=True)
-        if time.monotonic() - started >= 5:
+        if time.monotonic() - started >= 5 and select is not None:
             try:
-                import select
-
                 ready, _, _ = select.select([sys.stdin], [], [], 0)
-                if ready:
-                    try:
-                        sys.stdin.readline()
-                    except (OSError, ValueError):
-                        pass
-                    print(f"\n  {color.yellow('[*] COOLDOWN SKIPPED MANUALLY.')} ")
-                    return
             except (OSError, ValueError):
-                pass
+                ready = False
+            if ready:
+                try:
+                    sys.stdin.readline()
+                except (OSError, ValueError):
+                    pass
+                print(f"\n  {color.yellow('[*] COOLDOWN SKIPPED MANUALLY.')} ")
+                return
         time.sleep(1)
         remaining -= 1
     print()

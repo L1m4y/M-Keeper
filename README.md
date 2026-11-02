@@ -1,8 +1,14 @@
+<br/>
+
 <div align="center">
 
-<img src="assets/icon.png" alt="M-Keeper" width="160"/>
+<img src="assets/icon.png" alt="M-Keeper" width="192"/>
+
 <h1>M-Keeper</h1>
-Command-line tool for bulk Mega.nz account validation, maintenance and quota checks.
+
+**Command-line tool for bulk Mega.nz account validation, maintenance and quota checks.**
+
+A local utility that validates Mega.nz accounts and keeps free accounts active, without leaking credentials.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-D9272E?logo=gnu&logoColor=FFFFFF)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-D9272E?logo=python&logoColor=FFFFFF)](https://www.python.org/)
@@ -11,11 +17,6 @@ Command-line tool for bulk Mega.nz account validation, maintenance and quota che
 [![Linux](https://img.shields.io/badge/Linux-D9272E?logo=linux&logoColor=FFFFFF)](https://www.linux.org/)
 
 </div>
-
-`M-Keeper` iterates through a local list of Mega.nz accounts, authenticates each
-one with `megatools`, prints quota information and updates the stored status.
-It is meant to keep free accounts from becoming inactive, without leaking
-credentials on the process list.
 
 ## Installation
 
