@@ -36,8 +36,7 @@ DEFAULT_DELAY_MINUTES = 5
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_RETRIES = 1
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_FILE = Path(os.environ.get("MEGA_KEEPER_DB", str(BASE_DIR / "accounts.json")))
+DB_FILE = Path(os.environ.get("M_KEEPER_DB", "accounts.json"))
 
 
 class Color:
@@ -66,7 +65,7 @@ class Color:
 def setup_logging(quiet: bool = False) -> None:
     level = logging.WARNING if quiet else logging.INFO
     handlers = [logging.StreamHandler(sys.stderr)]
-    log_file = os.environ.get("MEGA_KEEPER_LOG")
+    log_file = os.environ.get("M_KEEPER_LOG")
     if log_file:
         try:
             handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
@@ -520,10 +519,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     subparsers.add_parser("doctor", help="check the local environment")
 
     start_p = subparsers.add_parser("start", help="run the maintenance sequence")
-    start_p.add_argument("--delay", type=int, default=_env_int("MEGA_KEEPER_DELAY_MINUTES", DEFAULT_DELAY_MINUTES), help="minutes between nodes")
-    start_p.add_argument("--timeout", type=int, default=_env_int("MEGA_KEEPER_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS), help="per-node timeout in seconds")
-    start_p.add_argument("--retries", type=int, default=_env_int("MEGA_KEEPER_RETRIES", DEFAULT_RETRIES), help="attempts per node")
-    start_p.add_argument("--concurrency", type=int, default=_env_int("MEGA_KEEPER_CONCURRENCY", 1), help="nodes processed in parallel")
+    start_p.add_argument("--delay", type=int, default=_env_int("M_KEEPER_DELAY_MINUTES", DEFAULT_DELAY_MINUTES), help="minutes between nodes")
+    start_p.add_argument("--timeout", type=int, default=_env_int("M_KEEPER_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS), help="per-node timeout in seconds")
+    start_p.add_argument("--retries", type=int, default=_env_int("M_KEEPER_RETRIES", DEFAULT_RETRIES), help="attempts per node")
+    start_p.add_argument("--concurrency", type=int, default=_env_int("M_KEEPER_CONCURRENCY", 1), help="nodes processed in parallel")
     start_p.add_argument("--shuffle", action="store_true", help="process nodes in random order")
     start_p.add_argument("--no-interactive", action="store_true", help="disable interactive cooldown skipping")
     start_p.add_argument("--dry-run", action="store_true", help="print the sequence without contacting Mega")
