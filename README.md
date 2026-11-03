@@ -163,8 +163,6 @@ cd rust/m-keeper-cli && cargo build --release && cargo test
 
 Or run everything through `make test`.
 
-## Disclaimer
-
 Use it at your own risk. Review `keeper.py` and `bin/keeper.sh` before running it
 against your main machine. Keep `accounts.json` private: it contains plain-text
 credentials.
