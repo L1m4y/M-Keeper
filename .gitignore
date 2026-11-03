@@ -1,9 +1,13 @@
 accounts.json
+accounts.json.*
+accounts.*.json
+!accounts.example.json
 *.tmp
+*.bak
+*.lock
 __pycache__/
 *.pyc
 .pytest_cache/
 target/
 Cargo.lock
-*.json.tmp
-.mega-keeper/
+.m-keeper/

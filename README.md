@@ -6,9 +6,9 @@
 
 <h1>M-Keeper</h1>
 
-**Command-line tool for bulk Mega.nz account validation, maintenance and quota checks.**
+**Command-line tool for bulk Mega.nz account validation, quota checks and periodic activity.**
 
-A local utility that validates Mega.nz accounts and keeps free accounts active, without leaking credentials.
+A local utility that logs in to each registered Mega.nz account through `megatools`, reports quota usage and keeps the account active to prevent data deletion.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-D9272E?logo=gnu&logoColor=FFFFFF)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-D9272E?logo=python&logoColor=FFFFFF)](https://www.python.org/)
@@ -18,13 +18,26 @@ A local utility that validates Mega.nz accounts and keeps free accounts active, 
 
 </div>
 
+## How it works
+
+M-Keeper wraps [`megatools`](https://github.com/crass/megatools). For every node it writes a short-lived `megatools` configuration file with mode `0600`, runs:
+
+```bash
+megatools df --reload --human --ignore-config-file --config <tmp> --no-ask-password
+```
+
+and removes the configuration file as soon as the command finishes. A successful login marks the node as `Active`; a failed login or network error marks it as `Error`.
+
+MEGA accounts themselves do not expire, but MEGA may delete the data of free accounts after an extended period of inactivity. According to [MEGA's help centre](https://help.mega.io/accounts/create-account/account-expiry), the process takes at least 10 months from the last activity, and logging in at any point stops it. Running `start` periodically keeps the activity timer fresh.
+
 ## Installation
 
 ```bash
 git clone https://github.com/L1m4y/M-Keeper.git
 cd M-Keeper
-The scripts run directly from the checkout; no package installation is required.
 ```
+
+The scripts run directly from the checkout; no package installation is required.
 
 Requirements:
 
@@ -58,16 +71,6 @@ only need the Python implementation.
   sudo zypper --non-interactive install megatools python3 jq nodejs rust cargo
   ```
 
-## Development
-
-```bash
-python -m compileall -q keeper.py
-python -m unittest tests.test_keeper -v
-node --check bin/keeper.js
-bash -n bin/keeper.sh
-cd rust/mega-keeper-cli && cargo build --release && cargo test
-```
-
 ## Quick start
 
 ```bash
@@ -88,16 +91,46 @@ python3 keeper.py import accounts.backup.json
 python3 keeper.py start --delay 3 --timeout 45 --concurrency 2 --shuffle --dry-run
 ```
 
+Useful global flags:
+
+```bash
+python3 keeper.py --db /path/to/accounts.json status
+python3 keeper.py --json status
+python3 keeper.py --no-color status
+python3 keeper.py --quiet start
+```
+
+The Bash and Node.js implementations expose the same core commands:
+
+```bash
+bash bin/keeper.sh status
+bash bin/keeper.sh add
+bash bin/keeper.sh start
+bash bin/keeper.sh doctor
+
+node bin/keeper.js status
+node bin/keeper.js add
+node bin/keeper.js start
+node bin/keeper.js doctor
+```
+
+The Rust binary is an environment-check helper:
+
+```bash
+cd rust/m-keeper-cli
+cargo run --release -- doctor
+```
+
 ## Environment
 
 | Variable | Description | Default |
 |---|---|---|
-| `MEGA_KEEPER_DB` | Account database path | `./accounts.json` |
-| `MEGA_KEEPER_DELAY_MINUTES` | Delay between nodes | `5` |
-| `MEGA_KEEPER_TIMEOUT_SECONDS` | Timeout per `megatools` call | `60` |
-| `MEGA_KEEPER_RETRIES` | Attempts per node | `1` |
-| `MEGA_KEEPER_CONCURRENCY` | Nodes processed in parallel | `1` |
-| `MEGA_KEEPER_LOG` | Optional log file | stderr only |
+| `M_KEEPER_DB` | Account database path | `./accounts.json` |
+| `M_KEEPER_DELAY_MINUTES` | Delay between nodes | `5` |
+| `M_KEEPER_TIMEOUT_SECONDS` | Timeout per `megatools` call | `60` |
+| `M_KEEPER_RETRIES` | Attempts per node (Python/Node.js) | `1` |
+| `M_KEEPER_CONCURRENCY` | Nodes processed in parallel (Python) | `1` |
+| `M_KEEPER_LOG` | Optional log file (Python) | stderr only |
 
 ## Database schema
 
@@ -112,14 +145,52 @@ python3 keeper.py start --delay 3 --timeout 45 --concurrency 2 --shuffle --dry-r
 ```
 
 Status values are `Pending`, `Active` or `Error`. The password is stored in clear
-text; restrict file permissions and do not commit the database.
+text; restrict file permissions and do not commit the database. M-Keeper creates
+the database and its backups with mode `0600`, and ignores common export/backup
+names in `.gitignore`.
 
 ## Behaviour notes
 
-- A node is retried when the first `megatools` call fails.
-- The `megatools` cache directory is cleared after every node to avoid stale state.
+- A node is retried when `--retries` is greater than `1` (default is `1`, so no retry).
+- `megatools` stores its session cache in the system temporary directory as
+  `<sha1(lowercase email)>.megatools.cache`. M-Keeper removes the cache file for
+  the node it just checked instead of deleting unrelated caches.
 - When standard input is a TTY, the cooldown can be skipped by pressing ENTER
   after the first five seconds.
-- In non-interactive mode the delay is randomised between 60 and 300 seconds.
-- `SIGINT`/`SIGTERM` stop the current run after the node in progress finishes.
+- In non-interactive mode the configured delay is used as-is; `SIGINT`/`SIGTERM`
+  interrupt the wait immediately.
+- `SIGINT`/`SIGTERM` stop the run after the node in progress finishes.
+- In parallel mode each batch runs concurrently and the cooldown is applied
+  between batches.
 
+## Limitations
+
+- `megatools` does not document two-factor authentication support; accounts with
+  2FA may fail to authenticate.
+- `megadf` cannot determine available space for premium accounts (upstream
+  `megatools` limitation).
+- The tool relies on MEGA's unofficial/third-party API access through
+  `megatools`; review MEGA's terms before using it with many accounts.
+- The Rust helper only checks the environment; it does not modify accounts.
+
+## Development
+
+```bash
+python -m compileall -q keeper.py
+python -m unittest tests.test_keeper -v
+node --check bin/keeper.js
+bash -n bin/keeper.sh
+cd rust/m-keeper-cli && cargo build --release && cargo test
+```
+
+Or run everything through `make test`.
+
+## Disclaimer
+
+Use it at your own risk. Review `keeper.py` and `bin/keeper.sh` before running it
+against your main machine. Keep `accounts.json` private: it contains plain-text
+credentials.
+
+## License
+
+GPL-3.0-or-later. See [LICENSE](LICENSE).

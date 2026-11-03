@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""M-Keeper: keep Mega.nz accounts alive by validating them periodically.
+"""M-Keeper: validate Mega.nz accounts and keep their activity current.
 
 This tool wraps the `megatools` command line utility. Account data never
 reaches a command line; credentials are written to a short-lived configuration
 file with mode 0600 and are removed as soon as the subprocess finishes.
+MEGA accounts do not expire, but MEGA may delete the data of free accounts after
+an extended period of inactivity, so logging in periodically keeps it safe.
 """
 
 from __future__ import annotations
@@ -11,11 +13,13 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import getpass
+import hashlib
 import json
 import logging
 import os
 import platform
 import random
+import select
 import shutil
 import signal
 import subprocess
@@ -36,8 +40,8 @@ DEFAULT_DELAY_MINUTES = 5
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_RETRIES = 1
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_FILE = Path(os.environ.get("MEGA_KEEPER_DB", str(BASE_DIR / "accounts.json")))
+DB_FILE = Path(os.environ.get("M_KEEPER_DB", "accounts.json"))
+VALID_STATUSES = {"Pending", "Active", "Error"}
 
 
 class Color:
@@ -66,7 +70,7 @@ class Color:
 def setup_logging(quiet: bool = False) -> None:
     level = logging.WARNING if quiet else logging.INFO
     handlers = [logging.StreamHandler(sys.stderr)]
-    log_file = os.environ.get("MEGA_KEEPER_LOG")
+    log_file = os.environ.get("M_KEEPER_LOG")
     if log_file:
         try:
             handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
@@ -76,7 +80,14 @@ def setup_logging(quiet: bool = False) -> None:
 
 
 def safe_email(value: str) -> bool:
-    return "@" in value and "." in value.split("@", 1)[-1]
+    if value.count("@") != 1 or any(ch.isspace() for ch in value):
+        return False
+    local, domain = value.split("@")
+    return bool(local and domain) and "." in domain and not domain.startswith(".") and not domain.endswith(".")
+
+
+def safe_credential(value: str) -> bool:
+    return bool(value) and "\n" not in value and "\r" not in value
 
 
 def _lock_path(db_path: Path) -> Path:
@@ -148,7 +159,7 @@ def save_accounts(db_path: Path, data: list[dict[str, str]], *, backup: bool = T
                 if backup and db_path.exists():
                     backup_path = db_path.with_suffix(db_path.suffix + ".bak")
                     try:
-                        backup_path.write_bytes(db_path.read_bytes())
+                        _atomic_write(backup_path, db_path.read_text(encoding="utf-8"))
                     except OSError as exc:
                         logging.warning("cannot create database backup: %s", exc)
                 _atomic_write(db_path, json.dumps(data, indent=2, ensure_ascii=False))
@@ -160,7 +171,9 @@ def save_accounts(db_path: Path, data: list[dict[str, str]], *, backup: bool = T
 
 
 def write_mega_config(email: str, password: str) -> str:
-    fd, path = tempfile.mkstemp(prefix="mega-keeper-", text=True)
+    if not safe_credential(email) or not safe_credential(password):
+        raise ValueError("credentials must not contain newlines")
+    fd, path = tempfile.mkstemp(prefix="m-keeper-", text=True)
     tmp_path = Path(path)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -181,7 +194,10 @@ def write_mega_config(email: str, password: str) -> str:
 
 
 def check_node(email: str, password: str, timeout: int) -> tuple[int, str, str]:
-    config_path = write_mega_config(email, password)
+    try:
+        config_path = write_mega_config(email, password)
+    except (OSError, ValueError) as exc:
+        return 1, "", str(exc) or "cannot create megatools config"
     try:
         result = subprocess.run(
             ["megatools", "df", "--reload", "--human", "--ignore-config-file", "--config", config_path, "--no-ask-password"],
@@ -207,7 +223,11 @@ def check_node(email: str, password: str, timeout: int) -> tuple[int, str, str]:
 def print_status(color: Color, db_path: Path, as_json: bool = False) -> int:
     accounts = load_accounts(db_path)
     if as_json:
-        print(json.dumps(accounts, indent=2, ensure_ascii=False))
+        safe = [
+            {"email": account.get("email"), "status": account.get("status", "Pending")}
+            for account in accounts
+        ]
+        print(json.dumps(safe, indent=2, ensure_ascii=False))
         return 0
     print(f"{color.cyan('M-Keeper')} {VERSION}")
     print("=" * 65)
@@ -245,12 +265,12 @@ def add_account(db_path: Path, color: Color, email: str | None = None, password:
             print()
             return 1
 
-    if not email or not password or not safe_email(email):
+    if not safe_email(email) or not safe_credential(email) or not safe_credential(password):
         print(color.red("[!] INVALID NODE. NOTHING SAVED."))
         return 2
 
     accounts = load_accounts(db_path)
-    if any(account.get("email") == email for account in accounts):
+    if any(str(account.get("email", "")).lower() == email.lower() for account in accounts):
         print(color.yellow("[!] NODE ALREADY REGISTERED."))
         return 0
 
@@ -263,7 +283,8 @@ def add_account(db_path: Path, color: Color, email: str | None = None, password:
 def remove_account(db_path: Path, email: str, assume_yes: bool = False, color: Color | None = None) -> int:
     color = color or Color(False)
     accounts = load_accounts(db_path)
-    if not any(account.get("email") == email for account in accounts):
+    target = email.lower()
+    if not any(str(account.get("email", "")).lower() == target for account in accounts):
         print(color.yellow(f"[!] NODE NOT FOUND: {email}"))
         return 1
     if not assume_yes:
@@ -275,7 +296,7 @@ def remove_account(db_path: Path, email: str, assume_yes: bool = False, color: C
         if answer not in {"y", "yes"}:
             print("Aborted.")
             return 1
-    new_accounts = [account for account in accounts if account.get("email") != email]
+    new_accounts = [account for account in accounts if str(account.get("email", "")).lower() != target]
     save_accounts(db_path, new_accounts)
     print(color.green(f"[+] NODE REMOVED: {email}"))
     return 0
@@ -284,10 +305,7 @@ def remove_account(db_path: Path, email: str, assume_yes: bool = False, color: C
 def export_accounts(db_path: Path, destination: Path) -> int:
     accounts = load_accounts(db_path)
     try:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        tmp = destination.with_suffix(destination.suffix + ".tmp")
-        _atomic_write(tmp, json.dumps(accounts, indent=2, ensure_ascii=False))
-        tmp.replace(destination)
+        _atomic_write(destination, json.dumps(accounts, indent=2, ensure_ascii=False))
     except OSError as exc:
         logging.error("cannot export database to %s: %s", destination, exc)
         return 1
@@ -304,18 +322,42 @@ def import_accounts(db_path: Path, source: Path, merge: bool = True) -> int:
     if not isinstance(incoming, list):
         logging.error("import file must contain a JSON array")
         return 2
-    incoming = [item for item in incoming if isinstance(item, dict)]
+    valid: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in incoming:
+        if not isinstance(item, dict):
+            continue
+        email = item.get("email")
+        password = item.get("password")
+        if not isinstance(email, str) or not isinstance(password, str):
+            continue
+        if not safe_email(email) or not safe_credential(email) or not safe_credential(password):
+            logging.warning("skipping invalid node: %r", email)
+            continue
+        key = email.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        status = item.get("status")
+        valid.append(
+            {
+                "email": email,
+                "password": password,
+                "status": status if status in VALID_STATUSES else "Pending",
+            }
+        )
     existing = load_accounts(db_path)
     if merge:
-        emails = {account.get("email") for account in existing}
-        for account in incoming:
-            if account.get("email") not in emails:
+        emails = {str(account.get("email", "")).lower() for account in existing}
+        for account in valid:
+            key = account["email"].lower()
+            if key not in emails:
                 existing.append(account)
-                emails.add(account.get("email"))
+                emails.add(key)
     else:
-        existing = incoming
+        existing = valid
     save_accounts(db_path, existing)
-    logging.info("imported %d nodes (total %d)", len(incoming), len(existing))
+    logging.info("imported %d nodes (total %d)", len(valid), len(existing))
     return 0
 
 
@@ -329,24 +371,35 @@ def _check_with_retry(email: str, password: str, timeout: int, retries: int) -> 
     return rc, stdout, stderr
 
 
-def _clear_cache() -> None:
-    cache_dir = Path.home() / ".cache" / "megatools"
-    if cache_dir.exists():
-        shutil.rmtree(cache_dir, ignore_errors=True)
+def _clear_cache(email: str) -> None:
+    """Remove the per-account session cache written by megatools.
+
+    megatools stores ``<sha1(lowercase email)>.megatools.cache`` in the system
+    temporary directory (see ``mega_session_save`` in the megatools source).
+    """
+    digest = hashlib.sha1(email.lower().encode("utf-8")).hexdigest()
+    cache_file = Path(tempfile.gettempdir()) / f"{digest}.megatools.cache"
+    try:
+        cache_file.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        logging.debug("cannot remove megatools cache %s: %s", cache_file, exc)
 
 
 def _countdown(total: int, color: Color, stop_event: threading.Event, no_interactive: bool) -> None:
+    if total <= 0:
+        return
     interactive = sys.stdout.isatty() and not no_interactive
     if not interactive:
-        delay = total if total > 0 else random.randint(60, 300)
-        print(f"   [i] next rotation in {delay}s...")
-        time.sleep(delay)
+        print(f"   [i] next rotation in {total}s...")
+        stop_event.wait(total)
         return
     remaining = total
     started = time.monotonic()
     while remaining > 0 and not stop_event.is_set():
         print(f"\r  {color.bold(f'DELAY: {remaining:04d}s')}", end="", flush=True)
-        if time.monotonic() - started >= 5 and select is not None:
+        if time.monotonic() - started >= 5:
             try:
                 ready, _, _ = select.select([sys.stdin], [], [], 0)
             except (OSError, ValueError):
@@ -370,6 +423,7 @@ def keep_alive(args: argparse.Namespace, color: Color) -> int:
         return 1
 
     total = len(accounts)
+    checked = 0
     success = 0
     failed = 0
     stop_event = threading.Event()
@@ -381,7 +435,7 @@ def keep_alive(args: argparse.Namespace, color: Color) -> int:
     signal.signal(signal.SIGTERM, _signal_handler)
 
     delay_seconds = max(0, args.delay * 60)
-    timeout = args.timeout
+    timeout = max(1, args.timeout)
     retries = max(1, args.retries)
     concurrency = max(1, min(args.concurrency, total))
 
@@ -396,7 +450,11 @@ def keep_alive(args: argparse.Namespace, color: Color) -> int:
         acc = accounts[index]
         email_val = str(acc.get("email", ""))
         pwd_val = str(acc.get("password", ""))
-        rc, stdout, stderr = _check_with_retry(email_val, pwd_val, timeout, retries)
+        try:
+            rc, stdout, stderr = _check_with_retry(email_val, pwd_val, timeout, retries)
+        except Exception as exc:  # keep one bad node from aborting the batch
+            logging.exception("unexpected failure for %s", email_val)
+            return index, email_val, 1, str(exc) or "unexpected failure"
         return index, email_val, rc, stdout if rc == 0 else stderr
 
     if concurrency == 1:
@@ -409,7 +467,12 @@ def keep_alive(args: argparse.Namespace, color: Color) -> int:
             print(f"\n{color.bold('=' * 50)}")
             print(f"{color.cyan(f'[>] NODE [{pos + 1}/{total}]')} {email_val}")
             print("  [*] authenticating and checking quota...")
-            rc, stdout, stderr = _check_with_retry(email_val, pwd_val, timeout, retries)
+            try:
+                rc, stdout, stderr = _check_with_retry(email_val, pwd_val, timeout, retries)
+            except Exception as exc:  # keep one bad node from aborting the run
+                logging.exception("unexpected failure for %s", email_val)
+                rc, stdout, stderr = 1, "", str(exc) or "unexpected failure"
+            checked += 1
             if rc == 0:
                 acc["status"] = "Active"
                 success += 1
@@ -423,7 +486,7 @@ def keep_alive(args: argparse.Namespace, color: Color) -> int:
                 if stderr:
                     print(f"      {stderr.splitlines()[0]}")
             save_accounts(args.db, accounts, backup=False)
-            _clear_cache()
+            _clear_cache(email_val)
             if pos < total - 1 and delay_seconds > 0 and not stop_event.is_set():
                 _countdown(delay_seconds, color, stop_event, args.no_interactive)
     else:
@@ -439,6 +502,7 @@ def keep_alive(args: argparse.Namespace, color: Color) -> int:
                     pos = indices.index(index) + 1
                     print(f"\n{color.bold('=' * 50)}")
                     print(f"{color.cyan(f'[>] NODE [{pos}/{total}]')} {email_val}")
+                    checked += 1
                     if rc == 0:
                         acc["status"] = "Active"
                         success += 1
@@ -452,18 +516,24 @@ def keep_alive(args: argparse.Namespace, color: Color) -> int:
                         if output:
                             print(f"      {output.splitlines()[0]}")
                     save_accounts(args.db, accounts, backup=False)
-                    _clear_cache()
+                    _clear_cache(email_val)
             if batch_index < len(batches) - 1 and delay_seconds > 0 and not stop_event.is_set():
                 _countdown(delay_seconds, color, stop_event, args.no_interactive)
 
     print(f"\n{color.bold('=' * 50)}")
-    print(f"{color.cyan('    MAINTENANCE SEQUENCE COMPLETED')}")
+    if stop_event.is_set():
+        print(f"{color.yellow('    MAINTENANCE SEQUENCE INTERRUPTED')}")
+    else:
+        print(f"{color.cyan('    MAINTENANCE SEQUENCE COMPLETED')}")
     print(f"{color.bold('=' * 50)}")
-    print(f"  total nodes checked : {total}")
-    print(f"  {color.green('[+] successful nodes : ' + str(success))}")
-    print(f"  {color.red('[-] failed nodes      : ' + str(failed))}")
+    print(f"  total nodes registered : {total}")
+    print(f"  total nodes checked    : {checked}")
+    print(f"  {color.green('[+] successful nodes   : ' + str(success))}")
+    print(f"  {color.red('[-] failed nodes       : ' + str(failed))}")
+    if checked < total:
+        print(f"  {color.yellow('[!] nodes skipped      : ' + str(total - checked))}")
     print(f"{color.bold('=' * 50)}")
-    return 0 if failed == 0 else 1
+    return 0 if failed == 0 and checked == total and not stop_event.is_set() else 1
 
 
 def doctor(color: Color, db_path: Path) -> int:
@@ -491,7 +561,7 @@ def doctor(color: Color, db_path: Path) -> int:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="mega-keeper", description="Bulk Mega.nz node validation and maintenance.")
+    parser = argparse.ArgumentParser(prog="m-keeper", description="Bulk Mega.nz node validation and maintenance.")
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     parser.add_argument("--no-color", action="store_true", help="disable colored output")
     parser.add_argument("--json", action="store_true", help="print structured JSON where applicable")
@@ -520,10 +590,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     subparsers.add_parser("doctor", help="check the local environment")
 
     start_p = subparsers.add_parser("start", help="run the maintenance sequence")
-    start_p.add_argument("--delay", type=int, default=_env_int("MEGA_KEEPER_DELAY_MINUTES", DEFAULT_DELAY_MINUTES), help="minutes between nodes")
-    start_p.add_argument("--timeout", type=int, default=_env_int("MEGA_KEEPER_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS), help="per-node timeout in seconds")
-    start_p.add_argument("--retries", type=int, default=_env_int("MEGA_KEEPER_RETRIES", DEFAULT_RETRIES), help="attempts per node")
-    start_p.add_argument("--concurrency", type=int, default=_env_int("MEGA_KEEPER_CONCURRENCY", 1), help="nodes processed in parallel")
+    start_p.add_argument("--delay", type=int, default=_env_int("M_KEEPER_DELAY_MINUTES", DEFAULT_DELAY_MINUTES), help="minutes between nodes")
+    start_p.add_argument("--timeout", type=int, default=_env_int("M_KEEPER_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS), help="per-node timeout in seconds")
+    start_p.add_argument("--retries", type=int, default=_env_int("M_KEEPER_RETRIES", DEFAULT_RETRIES), help="attempts per node")
+    start_p.add_argument("--concurrency", type=int, default=_env_int("M_KEEPER_CONCURRENCY", 1), help="nodes processed in parallel")
     start_p.add_argument("--shuffle", action="store_true", help="process nodes in random order")
     start_p.add_argument("--no-interactive", action="store_true", help="disable interactive cooldown skipping")
     start_p.add_argument("--dry-run", action="store_true", help="print the sequence without contacting Mega")
@@ -563,7 +633,10 @@ def main(argv: list[str] | None = None) -> int:
     if command == "start":
         if args.dry_run:
             accounts = load_accounts(args.db)
-            print(f"[dry-run] would check {len(accounts)} nodes (concurrency={args.concurrency})")
+            if args.json:
+                print(json.dumps({"dry_run": True, "nodes": len(accounts), "concurrency": args.concurrency}))
+            else:
+                print(f"[dry-run] would check {len(accounts)} nodes (concurrency={args.concurrency})")
             return 0
         return keep_alive(args, color)
 
