@@ -120,6 +120,18 @@ cd rust/m-keeper-cli
 cargo run --release -- doctor
 ```
 
+## Development
+
+```bash
+python -m compileall -q keeper.py
+python -m unittest tests.test_keeper -v
+node --check bin/keeper.js
+bash -n bin/keeper.sh
+cd rust/m-keeper-cli && cargo build --release && cargo test
+```
+
+Or run everything through `make test`.
+
 ## Database schema
 
 ```json
@@ -150,18 +162,6 @@ names in `.gitignore`.
 - `SIGINT`/`SIGTERM` stop the run after the node in progress finishes.
 - In parallel mode each batch runs concurrently and the cooldown is applied
   between batches.
-
-## Development
-
-```bash
-python -m compileall -q keeper.py
-python -m unittest tests.test_keeper -v
-node --check bin/keeper.js
-bash -n bin/keeper.sh
-cd rust/m-keeper-cli && cargo build --release && cargo test
-```
-
-Or run everything through `make test`.
 
 ## &#8203;
 
