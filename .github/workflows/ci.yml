@@ -30,10 +30,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Build
-        working-directory: rust/mega-keeper-cli
+        working-directory: rust/m-keeper-cli
         run: cargo build --release
       - name: Tests
-        working-directory: rust/mega-keeper-cli
+        working-directory: rust/m-keeper-cli
         run: cargo test --quiet
   shell:
     runs-on: ubuntu-latest

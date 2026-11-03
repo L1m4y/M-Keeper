@@ -1,5 +1,5 @@
 [package]
-name = "mega-keeper-rs"
+name = "m-keeper-rs"
 version = "2.0.0"
 edition = "2021"
 
